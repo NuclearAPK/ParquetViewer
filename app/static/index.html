@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parquet Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        .app-container { max-width: 1500px; margin: 0 auto; padding: 20px; }
+
+        header {
+            background: white;
+            border-radius: 8px;
+            padding: 18px 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 { font-size: 22px; color: #1a202c; }
+        .header-actions { display: flex; gap: 10px; }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary { background: #4299e1; color: white; }
+        .btn-primary:hover { background: #3182ce; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #5a6268; }
+        .btn-outline {
+            background: white; color: #4299e1;
+            border: 2px solid #4299e1;
+        }
+        .btn-outline:hover { background: #ebf8ff; }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 18px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .card h3 { font-size: 15px; color: #495057; margin-bottom: 12px; }
+
+        /* Open path row */
+        .open-row { display: flex; gap: 10px; }
+        .open-row input[type="text"] {
+            flex: 1;
+            padding: 10px 14px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: Consolas, monospace;
+            outline: none;
+        }
+        .open-row input[type="text"]:focus { border-color: #4299e1; }
+
+        .hint { font-size: 12px; color: #a0aec0; margin-top: 8px; }
+
+        /* Upload */
+        .upload-area {
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 22px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 12px;
+        }
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #4299e1; background: #f8f9fa;
+        }
+        .upload-area input[type="file"] { display: none; }
+
+        /* Dataset list */
+        .ds-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 14px; border-radius: 6px; cursor: pointer;
+            border: 1px solid transparent; margin-bottom: 6px;
+            transition: all 0.15s;
+        }
+        .ds-item:hover { background: #f8f9fa; border-color: #e2e8f0; }
+        .ds-item.active { background: #ebf8ff; border-color: #4299e1; }
+        .ds-name { font-weight: 600; color: #2d3748; font-size: 14px; }
+        .ds-meta { color: #718096; font-size: 12px; margin-top: 2px; }
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 10px;
+            font-size: 11px; font-weight: 600; margin-left: 8px;
+        }
+        .badge-iceberg { background: #c6f6d5; color: #22543d; }
+        .badge-dir { background: #e9d8fd; color: #44337a; }
+        .badge-file { background: #feebc8; color: #7b341e; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 4px; border-bottom: 2px solid #e2e8f0; margin-bottom: 0; }
+        .tab {
+            padding: 10px 22px; cursor: pointer; font-size: 14px; font-weight: 600;
+            color: #718096; border-bottom: 3px solid transparent;
+            margin-bottom: -2px; transition: all 0.15s; background: none;
+            border-radius: 6px 6px 0 0;
+        }
+        .tab:hover { color: #4a5568; background: #f7fafc; }
+        .tab.active { color: #2b6cb0; border-bottom-color: #4299e1; }
+
+        .tab-panel { display: none; padding-top: 16px; }
+        .tab-panel.active { display: block; }
+
+        /* Schema table */
+        .schema-comment {
+            background: #fffff0; border: 1px solid #ecc94b; border-radius: 6px;
+            padding: 10px 14px; font-size: 13px; color: #744210; margin-bottom: 14px;
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+
+        th {
+            background: #4a5568; color: white; padding: 10px 12px;
+            font-size: 12px; font-weight: 600; text-align: left;
+            border-bottom: 1px solid #718096; white-space: nowrap;
+        }
+
+        td {
+            padding: 8px 12px; border-bottom: 1px solid #edf2f7;
+            font-size: 13px; vertical-align: top;
+        }
+
+        tbody tr:nth-child(even) td { background: #fafbfc; }
+        tbody tr:hover td { background: #f0f7ff; }
+
+        .type-pill {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-family: Consolas, monospace; font-size: 12px;
+            background: #edf2f7; color: #2d3748; white-space: nowrap;
+        }
+        .type-pill.iceberg { background: #bee3f8; color: #2a4365; }
+        .doc-cell { color: #4a5568; font-size: 13px; max-width: 480px; white-space: normal; }
+        .req-yes { color: #22543d; font-weight: 600; }
+        .req-no { color: #9b2c2c; }
+        .muted { color: #a0aec0; font-style: italic; }
+
+        /* Data controls */
+        .data-controls {
+            display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+            margin-bottom: 14px;
+        }
+        .data-controls input[type="text"] {
+            flex: 1; min-width: 240px;
+            padding: 9px 14px; border: 2px solid #e2e8f0; border-radius: 6px;
+            font-size: 14px; outline: none;
+        }
+        .data-controls input[type="text"]:focus { border-color: #4299e1; }
+        .data-controls select {
+            padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 13px;
+        }
+        .data-controls label { font-size: 13px; color: #495057; }
+
+        .table-scroll { max-height: 560px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 6px; }
+        .table-scroll th { position: sticky; top: 0; z-index: 5; }
+        .table-scroll td {
+            max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .table-scroll td.wrap { white-space: normal; }
+
+        .null-value { color: #a0aec0; font-style: italic; }
+        .uuid-cell { font-family: Consolas, monospace; font-size: 12px; color: #2b6cb0; }
+
+        .stats-row {
+            display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+            margin-top: 12px; font-size: 13px; color: #4a5568;
+        }
+        .stat {
+            background: #f7fafc; padding: 6px 14px; border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+        .stat b { color: #2d3748; }
+
+        .empty-state { text-align: center; padding: 36px; color: #718096; }
+        .empty-state h3 { color: #4a5568; margin-bottom: 8px; }
+
+        /* Modal (filesystem browser) */
+        .modal-backdrop {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+            display: none; justify-content: center; align-items: flex-start;
+            z-index: 1000; padding-top: 60px;
+        }
+        .modal-backdrop.show { display: flex; }
+        .modal {
+            background: white; border-radius: 10px; width: 720px; max-width: 94vw;
+            max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            padding: 14px 18px; border-bottom: 1px solid #e2e8f0;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .modal-header h3 { font-size: 16px; }
+        .modal-close {
+            background: none; border: none; font-size: 22px; cursor: pointer;
+            color: #718096; padding: 0 6px;
+        }
+        .modal-path {
+            display: flex; gap: 8px; padding: 10px 18px;
+            border-bottom: 1px solid #e2e8f0; background: #f7fafc;
+        }
+        .modal-path input {
+            flex: 1; padding: 7px 10px; border: 1px solid #e2e8f0;
+            border-radius: 4px; font-family: Consolas, monospace; font-size: 13px;
+        }
+        .fs-list { overflow-y: auto; padding: 8px; flex: 1; }
+        .fs-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 14px;
+        }
+        .fs-item:hover { background: #ebf8ff; }
+        .fs-item .icon { font-size: 16px; width: 22px; text-align: center; }
+        .fs-item.dir { color: #2b6cb0; font-weight: 500; }
+        .fs-item.file { color: #2d3748; }
+        .fs-item .fs-badge { margin-left: auto; }
+        .modal-footer {
+            padding: 12px 18px; border-top: 1px solid #e2e8f0;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .fs-note { font-size: 12px; color: #718096; }
+
+        /* Loading / toast */
+        .loading-overlay {
+            position: fixed; inset: 0; background: rgba(255,255,255,0.8);
+            display: none; justify-content: center; align-items: center; z-index: 2000;
+        }
+        .loading-overlay.show { display: flex; }
+        .loading-spinner {
+            width: 46px; height: 46px; border: 3px solid #e2e8f0;
+            border-top-color: #4299e1; border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .toast {
+            position: fixed; bottom: 20px; right: 20px;
+            background: #4a5568; color: white; padding: 12px 20px;
+            border-radius: 8px; z-index: 3000; opacity: 0;
+            transform: translateY(20px); transition: all 0.3s; max-width: 440px;
+            font-size: 14px;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { background: #38a169; }
+        .toast.error { background: #e53e3e; }
+        .toast.info { background: #4299e1; }
+    </style>
+</head>
+<body>
+<div class="app-container">
+    <header>
+        <h1>📊 Parquet Viewer</h1>
+        <div class="header-actions">
+            <button class="btn-secondary" onclick="loadDatasets()">🔄 Refresh</button>
+            <button class="btn-secondary" onclick="checkHealth()">💚 Health</button>
+        </div>
+    </header>
+
+    <!-- Open by path -->
+    <div class="card">
+        <h3>📂 Открыть набор данных (папку или файл)</h3>
+        <div class="open-row">
+            <input type="text" id="path-input"
+                   placeholder="C:\path\to\parquet\dataset — папка с *.parquet, iceberg.schema.json, _common_metadata"
+                   value="C:\Users\User\AppData\Local\Temp\ExtractorParquet\907dab12-8242-45d0-bf82-5be7678bb7fb">
+            <button class="btn-outline" onclick="openFsBrowser()">🔍 Обзор…</button>
+            <button class="btn-primary" onclick="openPath(document.getElementById('path-input').value)">📂 Открыть</button>
+        </div>
+        <div class="hint">
+            Поддерживаются папки с Iceberg-схемой (<code>iceberg.schema.json</code>),
+            метаданными Parquet (<code>_common_metadata</code>) и файлами <code>*.parquet</code>,
+            а также одиночные <code>.parquet</code> файлы.
+        </div>
+
+        <div class="upload-area" id="upload-area">
+            ⬆️ Или перетащите <b>.parquet</b> файл сюда
+            <input type="file" id="file-input" multiple accept=".parquet">
+        </div>
+    </div>
+
+    <!-- Datasets -->
+    <div class="card">
+        <h3>🗂 Открытые наборы данных</h3>
+        <div id="ds-list">
+            <div class="empty-state" id="ds-empty">
+                <h3>Нет открытых наборов</h3>
+                <p>Откройте папку по пути или загрузите файл</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Working area -->
+    <div class="card" id="work-card" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+            <div>
+                <div style="font-size:17px; font-weight:600; color:#2d3748;" id="ds-title"></div>
+                <div class="ds-meta" id="ds-subtitle"></div>
+            </div>
+            <div style="font-size:12px; color:#718096; font-family:Consolas,monospace;" id="ds-path"></div>
+        </div>
+
+        <div class="tabs" style="margin-top:14px;">
+            <button class="tab active" id="tab-schema" onclick="switchTab('schema')">🧬 Схема</button>
+            <button class="tab" id="tab-data" onclick="switchTab('data')">📊 Данные</button>
+        </div>
+
+        <!-- Schema panel -->
+        <div class="tab-panel active" id="panel-schema">
+            <div class="schema-comment" id="schema-comment" style="display:none;"></div>
+            <div class="table-scroll" style="max-height:480px;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:44px;">ID</th>
+                            <th>Поле</th>
+                            <th>Тип (Iceberg)</th>
+                            <th>Тип (Arrow/Parquet)</th>
+                            <th style="width:90px;">NotNull</th>
+                            <th>Описание</th>
+                        </tr>
+                    </thead>
+                    <tbody id="schema-body"></tbody>
+                </table>
+            </div>
+            <div class="stats-row" id="schema-stats"></div>
+        </div>
+
+        <!-- Data panel -->
+        <div class="tab-panel" id="panel-data">
+            <div class="data-controls">
+                <label for="file-select">Файл:</label>
+                <select id="file-select" onchange="loadData(0)" style="display:none;"></select>
+                <input type="text" id="search-input" placeholder="🔍 Поиск по строковым колонкам…"
+                       oninput="debounceSearch()">
+                <label>Строк:</label>
+                <select id="limit-select" onchange="loadData(0)">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="250">250</option>
+                    <option value="500">500</option>
+                    <option value="1000">1000</option>
+                </select>
+                <button class="btn-primary btn-sm" onclick="exportData('csv')">⬇ CSV</button>
+                <button class="btn-secondary btn-sm" onclick="exportData('json')">⬇ JSON</button>
+            </div>
+
+            <div class="table-scroll">
+                <table>
+                    <thead><tr id="data-head"></tr></thead>
+                    <tbody id="data-body"></tbody>
+                </table>
+            </div>
+            <div class="stats-row" id="data-stats"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Filesystem browser modal -->
+<div class="modal-backdrop" id="fs-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>📁 Обзор файловой системы сервера</h3>
+            <button class="modal-close" onclick="closeFsBrowser()">✕</button>
+        </div>
+        <div class="modal-path">
+            <input type="text" id="fs-path-input" onkeydown="if(event.key==='Enter')browseFs(this.value)">
+            <button class="btn-primary btn-sm" onclick="browseFs(document.getElementById('fs-path-input').value)">Перейти</button>
+        </div>
+        <div class="fs-list" id="fs-list"></div>
+        <div class="modal-footer">
+            <span class="fs-note">📁 — папка, 📄 — parquet-файл. Нажмите на папку, чтобы войти.</span>
+            <button class="btn-primary" id="fs-open-btn" onclick="openFromBrowser()">📂 Открыть эту папку</button>
+        </div>
+    </div>
+</div>
+
+<!-- Loading / toast -->
+<div class="loading-overlay" id="loading-overlay"><div class="loading-spinner"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+    // ---------------- State ----------------
+    let currentDs = null;      // full schema payload of active dataset
+    let searchTimer = null;
+
+    // ---------------- Init ----------------
+    window.addEventListener('load', () => {
+        loadDatasets();
+        const path = document.getElementById('path-input').value.trim();
+        if (path) openPath(path);
+    });
+
+    // ---------------- API helpers ----------------
+    async function api(url, opts) {
+        const r = await fetch(url, opts);
+        let data = null;
+        try { data = await r.json(); } catch (e) {}
+        if (!r.ok) throw new Error((data && data.detail) || ('HTTP ' + r.status));
+        return data;
+    }
+
+    function showLoading(v) {
+        document.getElementById('loading-overlay').classList.toggle('show', !!v);
+    }
+
+    function toast(msg, type) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast ' + (type || 'info') + ' show';
+        clearTimeout(t._timer);
+        t._timer = setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    // Escape for double-quoted HTML attribute values
+    function attr(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ---------------- Datasets ----------------
+    async function loadDatasets() {
+        try {
+            const data = await api('/ds');
+            renderDsList(data.datasets);
+        } catch (e) {
+            toast('Ошибка загрузки списка: ' + e.message, 'error');
+        }
+    }
+
+    function renderDsList(items) {
+        const el = document.getElementById('ds-list');
+        if (!items.length) {
+            el.innerHTML = '<div class="empty-state"><h3>Нет открытых наборов</h3>' +
+                '<p>Откройте папку по пути или загрузите файл</p></div>';
+            return;
+        }
+        el.innerHTML = items.map(d => `
+            <div class="ds-item ${currentDs && currentDs.dataset_id === d.id ? 'active' : ''}"
+                 onclick="selectDataset('${d.id}')">
+                <div>
+                    <div class="ds-name">${esc(d.name)}
+                        ${d.has_iceberg_schema ? '<span class="badge badge-iceberg">iceberg schema</span>' : ''}
+                        <span class="badge ${d.kind === 'directory' ? 'badge-dir' : 'badge-file'}">${d.kind === 'directory' ? 'папка' : 'файл'}</span>
+                    </div>
+                    <div class="ds-meta">${d.total_rows.toLocaleString('ru')} строк · ${d.columns} колонок · ${d.files} файл(ов)</div>
+                    <div class="ds-meta" style="font-family:Consolas,monospace;">${esc(d.path)}</div>
+                </div>
+                <button class="btn-primary btn-sm" onclick="event.stopPropagation(); selectDataset('${d.id}')">Открыть →</button>
+            </div>
+        `).join('');
+    }
+
+    async function openPath(path) {
+        if (!path || !path.trim()) { toast('Укажите путь', 'error'); return; }
+        showLoading(true);
+        try {
+            const ds = await api('/open', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: path.trim()})
+            });
+            toast(`Открыт набор: ${ds.name} (${ds.total_rows.toLocaleString('ru')} строк)`, 'success');
+            await loadDatasets();
+            selectDataset(ds.dataset_id);
+        } catch (e) {
+            toast('Ошибка открытия: ' + e.message, 'error');
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    async function selectDataset(id) {
+        showLoading(true);
+        try {
+            currentDs = await api('/ds/' + id);
+            renderWorkArea();
+            switchTab(currentDs.has_iceberg_schema ? 'schema' : 'data');
+            loadDatasets();
+        } catch (e) {
+            toast('Ошибка: ' + e.message, 'error');
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    // ---------------- Work area ----------------
+    function renderWorkArea() {
+        const ds = currentDs;
+        document.getElementById('work-card').style.display = 'block';
+        document.getElementById('ds-title').textContent = ds.name;
+        const bits = [
+            ds.total_rows.toLocaleString('ru') + ' строк',
+            ds.fields.length + ' полей',
+            ds.files.length + ' файл(ов)',
+            ds.kind === 'directory' ? 'папка' : 'файл'
+        ];
+        document.getElementById('ds-subtitle').textContent = bits.join(' · ');
+        document.getElementById('ds-path').textContent = ds.path;
+
+        renderSchema(ds);
+        renderFileSelect(ds);
+    }
+
+    function renderSchema(ds) {
+        const cEl = document.getElementById('schema-comment');
+        if (ds.table_comment) {
+            cEl.style.display = 'block';
+            cEl.textContent = '💬 ' + ds.table_comment;
+        } else {
+            cEl.style.display = 'none';
+        }
+
+        const body = document.getElementById('schema-body');
+        if (!ds.fields.length) {
+            body.innerHTML = '<tr><td colspan="6" class="empty-state">Схема не найдена</td></tr>';
+        } else {
+            body.innerHTML = ds.fields.map(f => `
+                <tr>
+                    <td style="color:#718096;">${f.id != null ? f.id : '—'}</td>
+                    <td><b>${esc(f.name)}</b></td>
+                    <td>${f.iceberg_type
+                        ? `<span class="type-pill iceberg">${esc(f.iceberg_type)}</span>`
+                        : '<span class="muted">—</span>'}</td>
+                    <td>${f.arrow_type
+                        ? `<span class="type-pill">${esc(f.arrow_type)}</span>`
+                        : '<span class="muted">—</span>'}</td>
+                    <td class="${f.required ? 'req-yes' : 'req-no'}">${f.required ? 'да' : 'нет'}</td>
+                    <td class="doc-cell">${f.doc ? esc(f.doc) : '<span class="muted">—</span>'}</td>
+                </tr>
+            `).join('');
+        }
+
+        const s = document.getElementById('schema-stats');
+        const items = [];
+        items.push(`<div class="stat">Источник схемы: <b>${ds.has_iceberg_schema ? 'iceberg.schema.json' : 'Parquet metadata'}</b></div>`);
+        if (ds.schema_id != null) items.push(`<div class="stat">schema-id: <b>${ds.schema_id}</b></div>`);
+        if (ds.has_common_metadata) items.push(`<div class="stat">_common_metadata: <b>есть</b></div>`);
+        items.push(`<div class="stat">Файлы: <b>${ds.files.map(f => esc(f.name) + ' (' + f.rows.toLocaleString('ru') + ')').join(', ')}</b></div>`);
+        s.innerHTML = items.join('');
+    }
+
+    function renderFileSelect(ds) {
+        const sel = document.getElementById('file-select');
+        if (ds.files.length > 1) {
+            sel.style.display = 'inline-block';
+            sel.innerHTML = ds.files.map(f =>
+                `<option value="${esc(f.name)}">${esc(f.name)} (${f.rows.toLocaleString('ru')} стр.)</option>`
+            ).join('');
+        } else {
+            sel.style.display = 'none';
+            sel.innerHTML = ds.files.map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+        }
+        document.getElementById('search-input').value = '';
+    }
+
+    // ---------------- Tabs ----------------
+    function switchTab(name) {
+        document.getElementById('tab-schema').classList.toggle('active', name === 'schema');
+        document.getElementById('tab-data').classList.toggle('active', name === 'data');
+        document.getElementById('panel-schema').classList.toggle('active', name === 'schema');
+        document.getElementById('panel-data').classList.toggle('active', name === 'data');
+        if (name === 'data' && !document.getElementById('data-head').children.length) {
+            loadData(0);
+        }
+    }
+
+    // ---------------- Data ----------------
+    async function loadData(offset) {
+        if (!currentDs) return;
+        showLoading(true);
+        const file = document.getElementById('file-select').value;
+        const limit = document.getElementById('limit-select').value;
+        const search = document.getElementById('search-input').value.trim();
+
+        try {
+            const q = new URLSearchParams({offset: String(offset || 0), limit: limit});
+            if (file) q.set('file', file);
+            if (search) q.set('search', search);
+            const data = await api(`/ds/${currentDs.dataset_id}/data?${q}`);
+            renderData(data);
+        } catch (e) {
+            toast('Ошибка загрузки данных: ' + e.message, 'error');
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    function renderData(d) {
+        const head = document.getElementById('data-head');
+        const body = document.getElementById('data-body');
+        head.innerHTML = d.columns.map(c => `<th title="${esc(c)}">${esc(c)}</th>`).join('');
+
+        if (!d.data.length) {
+            body.innerHTML = `<tr><td colspan="${d.columns.length}" class="empty-state">Нет данных</td></tr>`;
+        } else {
+            body.innerHTML = d.data.map(row =>
+                `<tr>${d.columns.map(c => {
+                    const v = row[c];
+                    if (v === null || v === undefined) return '<td class="null-value">NULL</td>';
+                    const s = String(v);
+                    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+                    const shown = s.length > 80 ? s.slice(0, 80) + '…' : s;
+                    const cls = isUuid ? 'uuid-cell' : (s.length > 40 ? 'wrap' : '');
+                    return `<td class="${cls}" title="${esc(s)}">${esc(shown)}</td>`;
+                }).join('')}</tr>`
+            ).join('');
+        }
+
+        const stats = document.getElementById('data-stats');
+        const typeCounts = {};
+        Object.values(d.dtypes).forEach(t => {
+            const k = categorize(t);
+            typeCounts[k] = (typeCounts[k] || 0) + 1;
+        });
+        stats.innerHTML =
+            `<div class="stat">Показано: <b>${d.total_rows_returned}</b> из <b>${d.row_count.toLocaleString('ru')}</b> строк` +
+            (d.row_count !== d.file_row_count ? ` (в файле ${d.file_row_count.toLocaleString('ru')})` : '') + '</div>' +
+            `<div class="stat">Файл: <b>${esc(d.file)}</b></div>` +
+            Object.entries(typeCounts).map(([k, v]) => `<div class="stat">${k}: <b>${v}</b></div>`).join('');
+    }
+
+    function categorize(t) {
+        if (t.includes('int')) return 'Целые';
+        if (t.includes('float') || t.includes('double') || t.includes('decimal')) return 'Дробные';
+        if (t.includes('uuid') || t.includes('binary')) return 'UUID/Binary';
+        if (t.includes('timestamp') || t.includes('date')) return 'Даты';
+        if (t.includes('bool')) return 'Boolean';
+        if (t.includes('str') || t.includes('string') || t.includes('object')) return 'Строки';
+        return 'Прочее';
+    }
+
+    function debounceSearch() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => loadData(0), 350);
+    }
+
+    // ---------------- Export ----------------
+    async function exportData(format) {
+        if (!currentDs) return;
+        showLoading(true);
+        const file = document.getElementById('file-select').value;
+        try {
+            const q = new URLSearchParams({format});
+            if (file) q.set('file', file);
+            const d = await api(`/ds/${currentDs.dataset_id}/export?${q}`);
+            const mime = format === 'csv' ? 'text/csv' : 'application/json';
+            const blob = new Blob([d.content], {type: mime + ';charset=utf-8'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = d.filename + '.' + format;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            toast(`Экспортировано ${d.row_count.toLocaleString('ru')} строк в ${format.toUpperCase()}`, 'success');
+        } catch (e) {
+            toast('Ошибка экспорта: ' + e.message, 'error');
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    // ---------------- Upload ----------------
+    const upArea = document.getElementById('upload-area');
+    const upInput = document.getElementById('file-input');
+    upArea.addEventListener('click', () => upInput.click());
+    upArea.addEventListener('dragover', e => { e.preventDefault(); upArea.classList.add('dragover'); });
+    upArea.addEventListener('dragleave', () => upArea.classList.remove('dragover'));
+    upArea.addEventListener('drop', e => {
+        e.preventDefault(); upArea.classList.remove('dragover');
+        Array.from(e.dataTransfer.files).forEach(uploadFile);
+    });
+    upInput.addEventListener('change', e => {
+        Array.from(e.target.files).forEach(uploadFile);
+        e.target.value = '';
+    });
+
+    async function uploadFile(file) {
+        if (!file.name.toLowerCase().endsWith('.parquet')) {
+            toast(`Пропущен ${file.name}: только .parquet`, 'error');
+            return;
+        }
+        showLoading(true);
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await api('/upload', {method: 'POST', body: fd});
+            toast(res.message, 'success');
+            await loadDatasets();
+            selectDataset(res.dataset.dataset_id);
+        } catch (e) {
+            toast('Ошибка загрузки: ' + e.message, 'error');
+        } finally {
+            showLoading(false);
+        }
+    }
+
+    // ---------------- Filesystem browser ----------------
+    function openFsBrowser() {
+        document.getElementById('fs-modal').classList.add('show');
+        const cur = document.getElementById('path-input').value.trim();
+        browseFs(cur || 'C:\\');
+    }
+
+    function closeFsBrowser() {
+        document.getElementById('fs-modal').classList.remove('show');
+    }
+
+    async function browseFs(path) {
+        try {
+            const d = await api('/fs?path=' + encodeURIComponent(path));
+            document.getElementById('fs-path-input').value = d.path;
+            const list = document.getElementById('fs-list');
+            let html = '';
+            if (d.parent) {
+                html += `<div class="fs-item dir" data-path="${attr(d.parent)}">
+                    <span class="icon">⬆</span> ..</div>`;
+            }
+            html += d.dirs.map(x => `
+                <div class="fs-item dir" data-path="${attr(d.path + '\\' + x)}">
+                    <span class="icon">📁</span> ${esc(x)}</div>`).join('');
+            html += d.parquet_files.map(x => `
+                <div class="fs-item file" data-open="${attr(d.path + '\\' + x)}">
+                    <span class="icon">📄</span> ${esc(x)}
+                    <span class="badge badge-file fs-badge">parquet</span></div>`).join('');
+            if (d.has_iceberg_schema || d.has_common_metadata) {
+                if (d.has_iceberg_schema)
+                    html += `<div class="fs-item file"><span class="icon">🧬</span> iceberg.schema.json
+                        <span class="badge badge-iceberg fs-badge">схема</span></div>`;
+                if (d.has_common_metadata)
+                    html += `<div class="fs-item file"><span class="icon">🧾</span> _common_metadata
+                        <span class="badge fs-badge" style="background:#e2e8f0;color:#4a5568;">метаданные</span></div>`;
+            }
+            if (!d.dirs.length && !d.parquet_files.length && !d.has_iceberg_schema && !d.has_common_metadata) {
+                html += '<div class="empty-state">Папка пуста</div>';
+            }
+            list.innerHTML = html;
+            document.getElementById('fs-open-btn').disabled =
+                !(d.parquet_files.length || d.has_iceberg_schema);
+        } catch (e) {
+            toast('Ошибка: ' + e.message, 'error');
+        }
+    }
+
+    // Event delegation for the browser list (avoids inline JS quoting issues)
+    document.getElementById('fs-list').addEventListener('click', e => {
+        const item = e.target.closest('[data-path], [data-open]');
+        if (!item) return;
+        if (item.dataset.open) {
+            openPathFromBrowser(item.dataset.open);
+        } else if (item.dataset.path) {
+            browseFs(item.dataset.path);
+        }
+    });
+
+    function openFromBrowser() {
+        openPath(document.getElementById('fs-path-input').value);
+        closeFsBrowser();
+    }
+
+    function openPathFromBrowser(p) {
+        openPath(p);
+        closeFsBrowser();
+    }
+
+    // ---------------- Health ----------------
+    async function checkHealth() {
+        try {
+            const h = await api('/health');
+            toast(`Сервер: ${h.status} v${h.version} · наборов: ${h.datasets}`, 'success');
+        } catch (e) {
+            toast('Сервер недоступен', 'error');
+        }
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Uploaded / runtime data (может содержать пользовательские файлы)
+uploads/
+
+# Sample data (генерируется create_sample.py)
+sample_data.parquet
+
+# Node (осталось от отменённого WASM-варианта)
+node_modules/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
